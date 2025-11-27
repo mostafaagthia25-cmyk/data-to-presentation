@@ -3,6 +3,7 @@
 import { GoogleGenerativeAI } from '@google/generative-ai';
 
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
+// Updated to use a currently supported model
 const GEMINI_MODEL_NAME = import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash-exp';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -118,6 +119,10 @@ export async function callGeminiAPI(prompt) {
       throw new Error('Gemini API Error: API key not valid. Please pass a valid API key.');
     }
     
+    if (error.message?.includes('not found for API version')) {
+      throw new Error(`Gemini API Error: Model "${GEMINI_MODEL_NAME}" is not available. The model may have been retired. Please update to a current model like "gemini-2.0-flash-exp" or "gemini-2.5-flash".`);
+    }
+    
     throw new Error(`Gemini API Error: ${error.message || 'Unknown error'}`);
   }
 }
@@ -157,6 +162,8 @@ export async function transformFileToPresentation(file, userSettings) {
       throw new Error('API quota exceeded. Please try again later or check your Gemini API limits.');
     } else if (error.message.includes('Unsupported')) {
       throw error; // Pass through validation errors
+    } else if (error.message.includes('not found for API version')) {
+      throw new Error('The Gemini model is outdated. Please update VITE_GEMINI_MODEL to "gemini-2.0-flash-exp" or "gemini-2.5-flash" in your .env file.');
     } else {
       throw new Error(`Failed to generate presentation: ${error.message}`);
     }
