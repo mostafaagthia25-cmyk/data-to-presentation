@@ -1,4 +1,4 @@
-const GEMINI_API_KEY = process.env.NEXT_PUBLIC_GEMINI_API_KEY;
+const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
 const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
@@ -29,7 +29,7 @@ export function validateFile(file) {
 
 export async function callGeminiAPI(prompt) {
   if (!GEMINI_API_KEY) {
-    throw new Error('Gemini API key is not configured. Please add NEXT_PUBLIC_GEMINI_API_KEY to your .env.local file.');
+    throw new Error('Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env.local file.');
   }
 
   try {
