@@ -1,7 +1,51 @@
+// src/utils/geminiAPI.js
+
+import { GoogleGenerativeAI } from '@google/generative-ai';
+
 const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY;
-const GEMINI_API_URL = 'https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent';
+const GEMINI_MODEL_NAME = import.meta.env.VITE_GEMINI_MODEL || 'gemini-2.0-flash-exp';
 
 const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+// Validate API key on initialization
+if (!GEMINI_API_KEY) {
+  console.error('❌ API key is missing! Please set VITE_GEMINI_API_KEY in your environment variables.');
+}
+
+// Initialize Gemini AI
+let genAI = null;
+let model = null;
+
+if (GEMINI_API_KEY && GEMINI_API_KEY !== 'your_actual_api_key_here') {
+  genAI = new GoogleGenerativeAI(GEMINI_API_KEY);
+  model = genAI.getGenerativeModel({ 
+    model: GEMINI_MODEL_NAME,
+    generationConfig: {
+      temperature: 0.4,
+      topK: 32,
+      topP: 1,
+      maxOutputTokens: 8192,
+    },
+    safetySettings: [
+      {
+        category: 'HARM_CATEGORY_HARASSMENT',
+        threshold: 'BLOCK_NONE'
+      },
+      {
+        category: 'HARM_CATEGORY_HATE_SPEECH',
+        threshold: 'BLOCK_NONE'
+      },
+      {
+        category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
+        threshold: 'BLOCK_NONE'
+      },
+      {
+        category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
+        threshold: 'BLOCK_NONE'
+      }
+    ]
+  });
+}
 
 export function validateFile(file) {
   const allowedTypes = [
@@ -28,59 +72,31 @@ export function validateFile(file) {
 }
 
 export async function callGeminiAPI(prompt) {
-  if (!GEMINI_API_KEY) {
-    throw new Error('Gemini API key is not configured. Please add VITE_GEMINI_API_KEY to your .env.local file.');
+  // Check if API key is configured
+  if (!GEMINI_API_KEY || GEMINI_API_KEY === 'your_actual_api_key_here') {
+    throw new Error('API key is not configured. Please check your environment variables.');
+  }
+
+  if (!model) {
+    throw new Error('Gemini model is not initialized. Please check your API key.');
   }
 
   try {
-    const response = await fetch(`${GEMINI_API_URL}?key=${GEMINI_API_KEY}`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
-          temperature: 0.4,
-          topK: 32,
-          topP: 1,
-          maxOutputTokens: 8192,
-        },
-        safetySettings: [
-          {
-            category: 'HARM_CATEGORY_HARASSMENT',
-            threshold: 'BLOCK_NONE'
-          },
-          {
-            category: 'HARM_CATEGORY_HATE_SPEECH',
-            threshold: 'BLOCK_NONE'
-          },
-          {
-            category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT',
-            threshold: 'BLOCK_NONE'
-          },
-          {
-            category: 'HARM_CATEGORY_DANGEROUS_CONTENT',
-            threshold: 'BLOCK_NONE'
-          }
-        ]
-      })
-    });
+    console.log('🔑 API Key status:', GEMINI_API_KEY ? 'Present' : 'Missing');
+    console.log('🤖 Using model:', GEMINI_MODEL_NAME);
+    console.log('📡 Calling Gemini API...');
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(`Gemini API Error: ${errorData.error?.message || response.statusText}`);
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const text = response.text();
+
+    console.log('✅ Gemini API response received');
+
+    if (!text) {
+      throw new Error('Empty response from Gemini API');
     }
 
-    const data = await response.json();
-    
-    if (!data.candidates || !data.candidates[0]?.content?.parts?.[0]?.text) {
-      throw new Error('Invalid response from Gemini API');
-    }
-
-    let htmlContent = data.candidates[0].content.parts[0].text;
+    let htmlContent = text;
     
     // Clean up the response - remove markdown code blocks if present
     htmlContent = htmlContent.replace(/```html\n?/g, '').replace(/```\n?/g, '').trim();
@@ -91,11 +107,18 @@ export async function callGeminiAPI(prompt) {
       htmlContent = '<!DOCTYPE html>\n' + htmlContent;
     }
     
+    console.log('✅ HTML content cleaned and validated');
     return htmlContent;
     
   } catch (error) {
-    console.error('Gemini API call failed:', error);
-    throw error;
+    console.error('❌ Gemini API call failed:', error);
+    
+    // Handle specific error types
+    if (error.message?.includes('API_KEY_INVALID')) {
+      throw new Error('Gemini API Error: API key not valid. Please pass a valid API key.');
+    }
+    
+    throw new Error(`Gemini API Error: ${error.message || 'Unknown error'}`);
   }
 }
 
@@ -104,21 +127,28 @@ export async function transformFileToPresentation(file, userSettings) {
     // 1. Validate file
     validateFile(file);
     
+    console.log('📄 File validated:', file.name);
+    
     // 2. Read file content
     const { readFileContent } = await import('./fileReaders');
     const fileContent = await readFileContent(file);
+    
+    console.log('📖 File content read successfully');
     
     // 3. Build prompt
     const { buildPrompt } = await import('./promptBuilder');
     const prompt = buildPrompt(fileContent, userSettings);
     
+    console.log('📝 Prompt built successfully');
+    
     // 4. Call Gemini API
     const htmlContent = await callGeminiAPI(prompt);
     
+    console.log('✅ Transformation successful');
     return htmlContent;
     
   } catch (error) {
-    console.error('Transformation failed:', error);
+    console.error('❌ Transformation failed:', error);
     
     // Provide user-friendly error messages
     if (error.message.includes('API key')) {
@@ -131,4 +161,13 @@ export async function transformFileToPresentation(file, userSettings) {
       throw new Error(`Failed to generate presentation: ${error.message}`);
     }
   }
+}
+
+// Export API key status for debugging
+export function getAPIKeyStatus() {
+  return {
+    configured: !!GEMINI_API_KEY && GEMINI_API_KEY !== 'your_actual_api_key_here',
+    value: GEMINI_API_KEY ? '***configured***' : 'missing',
+    model: GEMINI_MODEL_NAME
+  };
 }
